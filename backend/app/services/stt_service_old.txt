@@ -1,0 +1,88 @@
+try:
+    import torch
+except Exception:
+    torch = None
+
+try:
+    from faster_whisper import WhisperModel
+except Exception:
+    WhisperModel = None
+
+try:
+    import numpy as np
+except Exception:
+    np = None
+from typing import Optional
+from app.config import get_settings
+
+settings = get_settings()
+
+
+class STTService:
+    def __init__(self):
+        if WhisperModel is None:
+            raise RuntimeError("faster_whisper not available")
+
+        self.model = WhisperModel(
+            settings.WHISPER_MODEL,
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            compute_type="float16" if torch.cuda.is_available() else "int8"
+        )
+    
+    def transcribe(self, audio_path: str, language: str = "en") -> dict:
+        """Transcribe audio file to text"""
+        segments, info = self.model.transcribe(
+            audio_path,
+            language=language,
+            import os
+            import requests
+            from app.config import get_settings
+            from typing import Optional
+
+            settings = get_settings()
+
+
+            def _get_hf_token() -> Optional[str]:
+                return os.environ.get("HUGGINGFACE_API_KEY") or os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_API_KEY") or os.environ.get("HF_TOKEN")
+
+
+            class HuggingFaceSTTService:
+                def __init__(self, model: str = None):
+                    self.model = model or settings.WHISPER_MODEL
+                    # Allow full repo id like 'openai/whisper-large-v2' or shorthand
+                    self.api_url = f"https://api-inference.huggingface.co/models/{self.model}"
+                    self.token = _get_hf_token()
+
+                def transcribe(self, audio_path: str) -> dict:
+                    headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+                    try:
+                        with open(audio_path, "rb") as f:
+                            resp = requests.post(self.api_url, headers=headers, data=f, timeout=120)
+                        resp.raise_for_status()
+                        # Response may be JSON with 'text' or a dict
+                        data = resp.json()
+                        if isinstance(data, dict) and "text" in data:
+                            return {"text": data["text"]}
+                        if isinstance(data, list) and data and isinstance(data[0], dict) and "text" in data[0]:
+                            return {"text": data[0]["text"]}
+                        # Fallback: try plain text
+                        return {"text": str(data)}
+                    except Exception as e:
+                        print(f"STT error: {e}")
+                        return {"text": ""}
+
+
+            class MockSTTService:
+                def transcribe(self, audio_path: str) -> dict:
+                    return {"text": "This is a placeholder transcription."}
+
+
+            if _get_hf_token():
+                stt_service = HuggingFaceSTTService()
+            else:
+                stt_service = MockSTTService()
+
+try:
+    stt_service = STTService()
+except Exception:
+    stt_service = MockSTTService()
