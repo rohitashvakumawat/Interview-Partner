@@ -7,7 +7,7 @@ services:
     container_name: interview_db
     environment:
       POSTGRES_USER: interview_user
-      POSTGRES_PASSWORD: interview_pass
+      POSTGRES_PASSWORD: nikhil
       POSTGRES_DB: interview_db
     ports:
       - "5432:5432"
@@ -42,7 +42,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://interview_user:interview_pass@postgres:5432/interview_db
+      - DATABASE_URL=postgresql://interview_user:nikhil@postgres:5432/interview_db
       - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./backend:/app
