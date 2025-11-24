@@ -1,15 +1,7 @@
-try:
-    from langgraph.graph import StateGraph, END
-    LANGGRAPH_AVAILABLE = True
-except Exception:
-    StateGraph = None
-    END = None
-    LANGGRAPH_AVAILABLE = False
-
+from langgraph.graph import StateGraph, END
 from typing import TypedDict, List, Dict, Annotated
 import operator
 from app.services.llm_service import llm_service
-
 
 class InterviewState(TypedDict):
     role: str
@@ -26,30 +18,26 @@ class InterviewState(TypedDict):
 
 class InterviewGraph:
     def __init__(self):
-        # If langgraph is available, build the full workflow; otherwise provide a lightweight fallback
-        if LANGGRAPH_AVAILABLE and StateGraph is not None:
-            self.graph = self.build_graph()
-        else:
-            self.graph = self.MockGraph(self)
-
+        self.graph = self.build_graph()
+    
     def build_graph(self):
         """Build the LangGraph workflow"""
         workflow = StateGraph(InterviewState)
-
+        
         # Add nodes
         workflow.add_node("initialize", self.initialize_interview)
         workflow.add_node("generate_question", self.generate_question)
         workflow.add_node("analyze_response", self.analyze_response)
         workflow.add_node("provide_feedback", self.provide_feedback)
         workflow.add_node("decide_next", self.decide_next_step)
-
+        
         # Add edges
         workflow.set_entry_point("initialize")
         workflow.add_edge("initialize", "generate_question")
         workflow.add_edge("generate_question", "analyze_response")
         workflow.add_edge("analyze_response", "provide_feedback")
         workflow.add_edge("provide_feedback", "decide_next")
-
+        
         # Conditional edge
         workflow.add_conditional_edges(
             "decide_next",
@@ -59,38 +47,8 @@ class InterviewGraph:
                 "end": END
             }
         )
-
+        
         return workflow.compile()
-
-    class MockGraph:
-        """A very small fallback graph that mimics `graph.invoke(state)` used by the app."""
-
-        def __init__(self, parent):
-            self.parent = parent
-
-        def invoke(self, state):
-            # Ensure expected keys exist
-            state.setdefault("conversation_history", state.get("conversation_history") or [])
-            state.setdefault("question_count", state.get("question_count", 0))
-            state.setdefault("max_questions", state.get("max_questions", 10))
-            state.setdefault("evaluation_notes", state.get("evaluation_notes") or [])
-
-            # If no current question, initialize
-            if not state.get("current_question"):
-                state = self.parent.initialize_interview(state)
-
-            # If user response exists, analyze and append evaluation
-            if state.get("user_response"):
-                state = self.parent.analyze_response(state)
-                state = self.parent.provide_feedback(state)
-
-            # If question_count not exceeded, generate a new question
-            if state.get("question_count", 0) < state.get("max_questions", 10):
-                state = self.parent.generate_question(state)
-            else:
-                state["should_end"] = True
-
-            return state
     
     def initialize_interview(self, state: InterviewState) -> InterviewState:
         """Initialize the interview session"""

@@ -4,21 +4,18 @@ from typing import List, Optional
 from app.utils.database import get_db
 from app.models.user import User
 from app.models.interview import Interview, Evaluation
-from app.api.auth import get_current_user, get_current_user_optional
+from app.api.auth import get_current_user
 from app.agents.interview_graph import interview_graph, InterviewState
 from app.services.evaluation_service import evaluation_service
+from app.services.stt_service import stt_service
 from app.services.tts_service import tts_service
-from app.services.stt_service_patched import stt_service
 from app.utils.redis_client import redis_client
-from app.config import get_settings
 from pydantic import BaseModel
 from datetime import datetime
 import json
 import asyncio
-import tempfile
 import os
-
-settings = get_settings()
+import tempfile
 
 router = APIRouter(prefix="/interviews", tags=["Interviews"])
 
@@ -33,23 +30,21 @@ class InterviewResponse(BaseModel):
     difficulty: str
     status: str
     created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    message: Optional[str] = None
-    audio_data: Optional[str] = None
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
 
 class MessageInput(BaseModel):
-    message: Optional[str] = None
+    message: str
     audio_data: Optional[str] = None
 
 @router.post("/create", response_model=InterviewResponse)
 def create_interview(
     interview_data: InterviewCreate,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Create a new interview session"""
-
+    
     # Validate role
     valid_roles = [
         "Software Engineer", "Data Scientist", "Product Manager",
@@ -57,28 +52,26 @@ def create_interview(
         "UI/UX Designer", "DevOps Engineer", "Project Manager",
         "Customer Success Manager", "Retail Associate", "HR Manager"
     ]
-
+    
     if interview_data.role not in valid_roles:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid role. Choose from: {', '.join(valid_roles)}"
         )
-
-    # Assign to current user or fallback to root user id 1 for dev
-    user_id = current_user.id if current_user else 1
-
+    
+    # Create interview
     interview = Interview(
-        user_id=user_id,
+        user_id=current_user.id,
         role=interview_data.role,
         difficulty=interview_data.difficulty,
         duration_minutes=interview_data.duration_minutes,
         status="pending"
     )
-
+    
     db.add(interview)
     db.commit()
     db.refresh(interview)
-
+    
     return InterviewResponse(
         id=interview.id,
         role=interview.role,
@@ -91,7 +84,7 @@ def create_interview(
 
 @router.get("/", response_model=List[InterviewResponse])
 def get_user_interviews(
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     status: Optional[str] = None,
     limit: int = 10
@@ -120,17 +113,14 @@ def get_user_interviews(
 @router.get("/{interview_id}")
 def get_interview(
     interview_id: int,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get interview details"""
-    interview = db.query(Interview).filter(Interview.id == interview_id).first()
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview not found")
-    # If a real authenticated user is present, enforce ownership
-    if current_user and not getattr(current_user, "_is_dev_fallback", False):
-        if interview.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this interview")
+    interview = db.query(Interview).filter(
+        Interview.id == interview_id,
+        Interview.user_id == current_user.id
+    ).first()
     
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
@@ -151,16 +141,17 @@ def get_interview(
 @router.post("/{interview_id}/start")
 def start_interview(
     interview_id: int,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Start an interview session"""
-    interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    interview = db.query(Interview).filter(
+        Interview.id == interview_id,
+        Interview.user_id == current_user.id
+    ).first()
+    
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
-    if current_user and not getattr(current_user, "_is_dev_fallback", False):
-        if interview.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this interview")
     
     if interview.status != "pending":
         raise HTTPException(status_code=400, detail="Interview already started or completed")
@@ -170,52 +161,40 @@ def start_interview(
     interview.started_at = datetime.utcnow()
     
     # Initialize interview state
-    # Build a plain dict for the interview state (JSON-serializable)
-    initial_state = {
-        "role": interview.role,
-        "difficulty": interview.difficulty,
-        "user_profile": {
-            "skills": (current_user.skills or []) if current_user else [],
-            "experience_years": (current_user.experience_years or 0) if current_user else 0,
-            "target_roles": (current_user.target_roles or []) if current_user else [],
-            "education": (current_user.education or {}) if current_user else {}
+    initial_state = InterviewState(
+        role=interview.role,
+        difficulty=interview.difficulty,
+        user_profile={
+            "skills": current_user.skills or [],
+            "experience_years": current_user.experience_years or 0,
+            "target_roles": current_user.target_roles or [],
+            "education": current_user.education or {}
         },
-        "conversation_history": [],
-        "current_question": "",
-        "question_count": 0,
-        "max_questions": 10,
-        "evaluation_notes": [],
-        "thinking_process": "",
-        "user_response": "",
-        "should_end": False
-    }
+        conversation_history=[],
+        current_question="",
+        question_count=0,
+        max_questions=10,
+        evaluation_notes=[],
+        thinking_process="",
+        user_response="",
+        should_end=False
+    )
     
-    # Store state in Redis (best-effort - do not fail start if Redis is down)
-    try:
-        redis_client.set(f"interview_state:{interview_id}", initial_state, expire=3600)
-    except Exception as e:
-        print(f"Warning: could not persist initial interview state to Redis: {e}")
+    # Store state in Redis
+    redis_client.set(f"interview_state:{interview_id}", initial_state, expire=3600)
     
     db.commit()
     
-    # Generate first question via the interview graph
-    try:
-        result = interview_graph.graph.invoke(initial_state)
-    except Exception as e:
-        # Surface graph errors to the client for easier debugging
-        raise HTTPException(status_code=500, detail=f"Interview graph failed: {e}")
-
+    # Generate first question
+    result = interview_graph.graph.invoke(initial_state)
+    
     # Update Redis with new state
-    try:
-        redis_client.set(f"interview_state:{interview_id}", result, expire=3600)
-    except Exception as e:
-        # Non-fatal but warn
-        print(f"Warning: failed to persist interview state to Redis: {e}")
-
-    # Save to database (conversation_history may be updated by graph)
+    redis_client.set(f"interview_state:{interview_id}", result, expire=3600)
+    
+    # Save to database
     interview.conversation_history = result.get("conversation_history", [])
     db.commit()
-
+    
     return {
         "message": "Interview started",
         "question": result.get("current_question", ""),
@@ -226,16 +205,17 @@ def start_interview(
 async def respond_to_question(
     interview_id: int,
     message_input: MessageInput,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Submit response to interview question"""
-    interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    interview = db.query(Interview).filter(
+        Interview.id == interview_id,
+        Interview.user_id == current_user.id
+    ).first()
+    
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
-    if current_user and not getattr(current_user, "_is_dev_fallback", False):
-        if interview.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this interview")
     
     if interview.status != "in_progress":
         raise HTTPException(status_code=400, detail="Interview is not in progress")
@@ -314,16 +294,17 @@ async def respond_to_question(
 
 async def complete_interview(
     interview_id: int,
-    current_user: Optional[User],
+    current_user: User,
     db: Session
 ):
     """Complete interview and generate evaluation"""
-    interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    interview = db.query(Interview).filter(
+        Interview.id == interview_id,
+        Interview.user_id == current_user.id
+    ).first()
+    
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
-    if current_user and not getattr(current_user, "_is_dev_fallback", False):
-        if interview.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this interview")
     
     # Get final state
     state = redis_client.get(f"interview_state:{interview_id}")
@@ -386,7 +367,7 @@ async def complete_interview(
 @router.post("/{interview_id}/complete")
 async def complete_interview_endpoint(
     interview_id: int,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Manually complete an interview"""
@@ -395,16 +376,17 @@ async def complete_interview_endpoint(
 @router.delete("/{interview_id}")
 def delete_interview(
     interview_id: int,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete an interview"""
-    interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    interview = db.query(Interview).filter(
+        Interview.id == interview_id,
+        Interview.user_id == current_user.id
+    ).first()
+    
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
-    if current_user and not getattr(current_user, "_is_dev_fallback", False):
-        if interview.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this interview")
     
     # Delete associated evaluation
     db.query(Evaluation).filter(Evaluation.interview_id == interview_id).delete()

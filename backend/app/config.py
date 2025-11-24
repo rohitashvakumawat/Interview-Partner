@@ -8,14 +8,13 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # Database
-    # Use SQLite by default for easier local development and testing.
-    DATABASE_URL: str = "sqlite:///./interview.db"
+    DATABASE_URL: str = "postgresql://user:password@localhost:5432/interview_db"
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # Security
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    SECRET_KEY: str = "yHW8MpAtnb5orBgqVsXblIV6JEWvxUBjiYU0EMKYQ2Y"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
@@ -23,10 +22,6 @@ class Settings(BaseSettings):
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_PHONE_NUMBER: str = ""
-
-    # Root / admin credentials (use only for local/dev testing)
-    ROOT_EMAIL: str = "admin@example.com"
-    ROOT_PASSWORD: str = "change-me-now"
     
     # LLM
     MODEL_NAME: str = "mistralai/Mistral-7B-Instruct-v0.2"
@@ -44,11 +39,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
     
-    # Pydantic v2 model config: allow extra env vars and load from .env
-    model_config = {
-        "env_file": ".env",
-        "extra": "allow"
-    }
+    class Config:
+        env_file = ".env"
 
 @lru_cache()
 def get_settings():

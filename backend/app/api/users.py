@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List
 from app.utils.database import get_db
 from app.models.user import User
-from app.api.auth import get_current_user, oauth2_scheme, create_access_token, get_current_user_optional
+from app.api.auth import get_current_user
 from app.services.resume_parser import resume_parser
 from app.config import get_settings
 from pydantic import BaseModel
 import os
 import shutil
-from jose import jwt, JWTError
 
 router = APIRouter(prefix="/users", tags=["Users"])
 settings = get_settings()
@@ -31,19 +30,8 @@ class UserProfileUpdate(BaseModel):
     education: dict = None
 
 @router.get("/me", response_model=UserProfile)
-def get_current_user_profile(current_user: Optional[User] = Depends(get_current_user_optional)):
-    """Get current user profile. Works with or without token."""
-    if not current_user:
-        # Return a dummy profile if no auth
-        return UserProfile(
-            full_name="Guest",
-            email="guest@example.com",
-            phone="+1-000-0000",
-            skills=[],
-            experience_years=0,
-            target_roles=[],
-            education={}
-        )
+def get_current_user_profile(current_user: User = Depends(get_current_user)):
+    """Get current user profile"""
     return UserProfile(
         full_name=current_user.full_name,
         email=current_user.email,
@@ -57,7 +45,7 @@ def get_current_user_profile(current_user: Optional[User] = Depends(get_current_
 @router.put("/me")
 def update_user_profile(
     profile_update: UserProfileUpdate,
-        current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Update user profile"""
@@ -80,7 +68,7 @@ def update_user_profile(
 @router.post("/upload-resume")
 async def upload_resume(
     file: UploadFile = File(...),
-        current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Upload and parse resume"""
@@ -142,7 +130,7 @@ async def upload_resume(
 
 @router.delete("/resume")
 def delete_resume(
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete user's resume"""
@@ -159,7 +147,7 @@ def delete_resume(
 
 @router.get("/stats")
 def get_user_stats(
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get user statistics"""

@@ -1,29 +1,20 @@
 import random
 import string
 from datetime import datetime, timedelta
-try:
-    from twilio.rest import Client
-except Exception:
-    Client = None
-
+from twilio.rest import Client
 from app.config import get_settings
 from app.utils.database import get_db
 from app.models.user import OTP
 
 settings = get_settings()
 
-
 class OTPService:
     def __init__(self):
-        # Initialize Twilio client only if credentials exist and package is available
-        if Client and settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
-            try:
-                self.client = Client(
-                    settings.TWILIO_ACCOUNT_SID,
-                    settings.TWILIO_AUTH_TOKEN
-                )
-            except Exception:
-                self.client = None
+        if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
+            self.client = Client(
+                settings.TWILIO_ACCOUNT_SID,
+                settings.TWILIO_AUTH_TOKEN
+            )
         else:
             self.client = None
     

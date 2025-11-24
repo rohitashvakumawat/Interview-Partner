@@ -5,7 +5,6 @@ from app.utils.database import get_db
 from app.models.user import User
 from app.models.interview import Interview, Evaluation
 from app.api.auth import get_current_user
-from app.api.auth import get_current_user, get_current_user_optional
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -13,7 +12,7 @@ router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 @router.get("/dashboard")
 def get_dashboard_analytics(
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get comprehensive dashboard analytics"""
@@ -126,7 +125,7 @@ def get_dashboard_analytics(
         },
         "progress_over_time": [
             {
-                "date": item.date if isinstance(item.date, str) else item.date.isoformat(),
+                "date": item.date.isoformat(),
                 "avg_score": round(item.avg_score, 2)
             }
             for item in progress_data
@@ -146,7 +145,7 @@ def get_dashboard_analytics(
 @router.get("/evaluations/{evaluation_id}")
 def get_evaluation_details(
     evaluation_id: int,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get detailed evaluation report"""
@@ -188,7 +187,7 @@ def get_evaluation_details(
 
 @router.get("/improvement-trends")
 def get_improvement_trends(
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     days: int = 90
 ):
@@ -235,7 +234,7 @@ def get_improvement_trends(
 
 @router.get("/recommendations")
 def get_personalized_recommendations(
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get personalized recommendations based on performance"""

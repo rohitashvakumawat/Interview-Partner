@@ -1,17 +1,6 @@
 from typing import Dict, List
 from app.services.llm_service import llm_service
-
-try:
-    import numpy as np
-except Exception:
-    # Minimal fallback for mean
-    class _NPFallback:
-        @staticmethod
-        def mean(arr):
-            arr = [a for a in arr if a is not None]
-            return float(sum(arr)) / len(arr) if arr else 0.0
-
-    np = _NPFallback()
+import numpy as np
 
 class EvaluationService:
     def __init__(self):

@@ -8,11 +8,6 @@ from app.api import auth, users, interviews, analytics
 import os
 import logging
 
-from dotenv import load_dotenv
-
-# Load environment variables from .env file (must be before config is initialized)
-load_dotenv()
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -83,7 +78,7 @@ async def startup_event():
         logger.error(f"Failed to initialize LLM service: {e}")
     
     try:
-        from app.services.stt_service_patched import stt_service
+        from app.services.stt_service import stt_service
         logger.info("STT service initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize STT service: {e}")
