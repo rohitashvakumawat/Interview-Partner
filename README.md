@@ -42,5 +42,5 @@ An AI-powered interview practice platform that helps users improve their intervi
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/interview-practice-partner.git
-cd interview-practice-partner
+git clone https://github.com/yourusername/interview-partner.git
+cd interview-partner
