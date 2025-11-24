@@ -2,6 +2,9 @@
 
 An AI-powered interview practice platform that helps users improve their interview skills through realistic mock interviews with personalized feedback.
 
+## Thank you note:
+Thank you for giving me the opportunity to work on this assessment. Even though I couldn’t complete the entire system due to time constraints, I truly enjoyed the learning process and exploring new concepts. Regardless of the outcome, I’ll continue improving the project and plan to take it live.
+
 ## ✨ Features
 
 - **🤖 AI-Powered Interviews**: Realistic interview simulations using LangGraph and local LLMs
